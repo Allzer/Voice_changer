@@ -7,16 +7,20 @@ import time
 # Создание флага остановки для управления потоком изменения голоса
 stop_flag = threading.Event()
 voice_thread = None
+direct_thread = None
 
 # Задайте индексы ваших устройств
-INPUT_DEVICE_INDEX = 1  # Индекс виртуального микрофона
-OUTPUT_DEVICE_INDEX = 4  # Индекс виртуального устройства
+INPUT_DEVICE_INDEX = 2  # Физический микрофон
+OUTPUT_DEVICE_INDEX = 7  # Виртуальный микрофон
 
 def voice_changer():
-    global voice_thread
-    # Проверка, что поток уже не запущен
+    global voice_thread, direct_thread
     if voice_thread is not None and voice_thread.is_alive():
-        return  # Не запускаем новый поток, если предыдущий еще работает
+        return
+
+    if direct_thread is not None and direct_thread.is_alive():
+        stop_flag.set()
+        direct_thread.join()
 
     voice_thread = threading.Thread(target=_voice_changer, daemon=True)
     voice_thread.start()
@@ -29,7 +33,6 @@ def _voice_changer():
     FORMAT = pyaudio.paInt16
     CHANNELS = 1
     RATE = 44100
-
     LOWER_FACTOR = 0.8
 
     p = pyaudio.PyAudio()
@@ -45,7 +48,6 @@ def _voice_changer():
                         output_device_index=OUTPUT_DEVICE_INDEX)
 
         while not stop_flag.is_set():
-            start_time = time.time()
             audio_data = stream.read(BLOCK_SIZE)
             audio_array = np.frombuffer(audio_data, dtype=np.int16)
 
@@ -64,8 +66,6 @@ def _voice_changer():
 
             stream.write(processed_data)
 
-            elapsed_time = time.time() - start_time
-
     except Exception as e:
         print(f"Error during voice changing: {e}")
 
@@ -75,5 +75,45 @@ def _voice_changer():
             stream.close()
         p.terminate()
 
+def direct_audio_pass():
+    global stop_flag
+    stop_flag.clear()
+
+    BLOCK_SIZE = 1024
+    FORMAT = pyaudio.paInt16
+    CHANNELS = 1
+    RATE = 44100
+
+    p = pyaudio.PyAudio()
+    stream = None
+
+    try:
+        stream = p.open(format=FORMAT,
+                        channels=CHANNELS,
+                        rate=RATE,
+                        input=True,
+                        output=True,
+                        input_device_index=INPUT_DEVICE_INDEX,
+                        output_device_index=OUTPUT_DEVICE_INDEX)
+
+        while not stop_flag.is_set():
+            audio_data = stream.read(BLOCK_SIZE)
+            stream.write(audio_data)
+
+    except Exception as e:
+        print(f"Error during direct audio pass: {e}")
+
+    finally:
+        if stream is not None:
+            stream.stop_stream()
+            stream.close()
+        p.terminate()
+
 def stop_voice_changer():
+    global direct_thread
     stop_flag.set()
+    if voice_thread is not None:
+        voice_thread.join()
+
+    direct_thread = threading.Thread(target=direct_audio_pass, daemon=True)
+    direct_thread.start()

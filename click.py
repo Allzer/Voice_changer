@@ -16,8 +16,6 @@ def toggle_start(event):
         start = 0
         stop_voice_changer()
 
-# Устанавливаем обработчик для нажатия клавиши F7
 keyboard.on_press_key("F7", toggle_start)
 
-# Бесконечный цикл для поддержания программы в активном состоянии
-keyboard.wait('esc')  # Программа завершится при нажатии Esc
+keyboard.wait('esc')
